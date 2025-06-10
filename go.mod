@@ -5,6 +5,7 @@ go 1.24.3
 require (
 	github.com/joho/godotenv v1.5.1
 	github.com/mymmrac/telego v1.1.0
+	modernc.org/sqlite v1.37.1
 )
 
 require (
@@ -30,5 +31,4 @@ require (
 	modernc.org/libc v1.65.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.37.1 // indirect
 )
