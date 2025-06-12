@@ -1,6 +1,9 @@
 package menu
 
 import (
+	"fmt"
+
+	"github.com/AlexEagle1535/market-rent-bot/db"
 	"github.com/mymmrac/telego"
 	tu "github.com/mymmrac/telego/telegoutil"
 )
@@ -42,7 +45,7 @@ func AdminUsers() *telego.InlineKeyboardMarkup {
 			tu.InlineKeyboardButton("📥 Импорт пользователей из файла").WithCallbackData("import_csv"),
 		),
 		tu.InlineKeyboardRow(
-			tu.InlineKeyboardButton("📋 Список пользователей").WithCallbackData("list_tenants"),
+			tu.InlineKeyboardButton("👥 Список пользователей").WithCallbackData("list_users"),
 		),
 		tu.InlineKeyboardRow(
 			tu.InlineKeyboardButton("➕ Добавить пользователя").WithCallbackData("add_user"),
@@ -67,6 +70,44 @@ func AddUser() *telego.InlineKeyboardMarkup {
 	)
 }
 
+func AdminUserList(users []db.User) *telego.InlineKeyboardMarkup {
+
+	rows := make([][]telego.InlineKeyboardButton, 0)
+	for _, u := range users {
+		username := "null"
+		if u.Username.Valid {
+			username = u.Username.String
+		}
+		telegramID := "0"
+		if u.TelegramID.Valid {
+			telegramID = fmt.Sprintf("%d", u.TelegramID.Int64)
+		}
+		var label string
+		if username != "null" {
+			label = fmt.Sprintf("%s - %s", username, u.Role)
+		} else {
+			label = fmt.Sprintf("%s - %s", telegramID, u.Role)
+		}
+		userBtn := tu.InlineKeyboardButton(label).WithCallbackData("noop")
+		delBtn := tu.InlineKeyboardButton("❌").WithCallbackData(fmt.Sprintf("confirm_delete:%s:%s", telegramID, username))
+		rows = append(rows, []telego.InlineKeyboardButton{userBtn, delBtn})
+	}
+	rows = append(rows, tu.InlineKeyboardRow(
+		tu.InlineKeyboardButton("🔙 Назад").WithCallbackData("admin_users"),
+	))
+	keyboard := tu.InlineKeyboard(rows...)
+	return keyboard
+}
+
+func ConfirmDeleteUser(telegramID, username string) *telego.InlineKeyboardMarkup {
+	return tu.InlineKeyboard(
+		tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("✅ Подтвердить").WithCallbackData(fmt.Sprintf("delete_user:%s:%s", telegramID, username)),
+			tu.InlineKeyboardButton("❌ Отмена").WithCallbackData("list_users"),
+		),
+	)
+}
+
 func Tenant() *telego.InlineKeyboardMarkup {
 	return tu.InlineKeyboard(
 		tu.InlineKeyboardRow(
@@ -74,6 +115,14 @@ func Tenant() *telego.InlineKeyboardMarkup {
 		),
 		tu.InlineKeyboardRow(
 			tu.InlineKeyboardButton("📄 Мой договор").WithCallbackData("tenant_contract"),
+		),
+	)
+}
+
+func OkButton(data string) *telego.InlineKeyboardMarkup {
+	return tu.InlineKeyboard(
+		tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("✅ ОК").WithCallbackData(data),
 		),
 	)
 }
