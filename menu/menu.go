@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/AlexEagle1535/market-rent-bot/db"
+	"github.com/AlexEagle1535/market-rent-bot/states"
 	"github.com/mymmrac/telego"
 	tu "github.com/mymmrac/telego/telegoutil"
 )
@@ -70,10 +71,68 @@ func AddUser() *telego.InlineKeyboardMarkup {
 	)
 }
 
-func AdminUserList(users []db.User) *telego.InlineKeyboardMarkup {
+// func AdminUserList(users []db.User) *telego.InlineKeyboardMarkup {
+
+// 	rows := make([][]telego.InlineKeyboardButton, 0)
+// 	for _, u := range users {
+// 		username := "null"
+// 		if u.Username.Valid {
+// 			username = u.Username.String
+// 		}
+// 		telegramID := "0"
+// 		if u.TelegramID.Valid {
+// 			telegramID = fmt.Sprintf("%d", u.TelegramID.Int64)
+// 		}
+// 		var label string
+// 		if username != "null" {
+// 			label = fmt.Sprintf("%s - %s", username, u.Role)
+// 		} else {
+// 			label = fmt.Sprintf("%s - %s", telegramID, u.Role)
+// 		}
+// 		userBtn := tu.InlineKeyboardButton(label).WithCallbackData("noop")
+// 		delBtn := tu.InlineKeyboardButton("❌").WithCallbackData(fmt.Sprintf("confirm_delete:%s:%s", telegramID, username))
+// 		rows = append(rows, []telego.InlineKeyboardButton{userBtn, delBtn})
+// 	}
+// 	rows = append(rows, tu.InlineKeyboardRow(
+// 		tu.InlineKeyboardButton("🔙 Назад").WithCallbackData("admin_users"),
+// 	))
+// 	keyboard := tu.InlineKeyboard(rows...)
+// 	return keyboard
+// }
+
+func AdminUserList(users []db.User, state *states.UserListState) *telego.InlineKeyboardMarkup {
+	const pageSize = 10
+	page := state.Page
+	search := state.Search
+	start := page * pageSize
+	if start >= len(users) {
+		page = 0
+		state.Page = 0
+		start = 0
+	}
+	end := start + pageSize
+	if end > len(users) {
+		end = len(users)
+	}
+	slice := users[start:end]
 
 	rows := make([][]telego.InlineKeyboardButton, 0)
-	for _, u := range users {
+
+	// Фильтры
+	filterRow := tu.InlineKeyboardRow(
+		tu.InlineKeyboardButton("👥 Все").WithCallbackData("filter:all"),
+		tu.InlineKeyboardButton("🛡 Админы").WithCallbackData("filter:admin"),
+		tu.InlineKeyboardButton("🏠 Арендаторы").WithCallbackData("filter:tenant"),
+	)
+	rows = append(rows, filterRow)
+
+	// Поиск
+	rows = append(rows, tu.InlineKeyboardRow(
+		tu.InlineKeyboardButton("🔍 Поиск").WithCallbackData("search_user"),
+	))
+
+	// Список пользователей
+	for _, u := range slice {
 		username := "null"
 		if u.Username.Valid {
 			username = u.Username.String
@@ -82,21 +141,37 @@ func AdminUserList(users []db.User) *telego.InlineKeyboardMarkup {
 		if u.TelegramID.Valid {
 			telegramID = fmt.Sprintf("%d", u.TelegramID.Int64)
 		}
-		var label string
-		if username != "null" {
-			label = fmt.Sprintf("%s - %s", username, u.Role)
-		} else {
-			label = fmt.Sprintf("%s - %s", telegramID, u.Role)
-		}
+
+		label := fmt.Sprintf("%s - %s", username, u.Role)
 		userBtn := tu.InlineKeyboardButton(label).WithCallbackData("noop")
 		delBtn := tu.InlineKeyboardButton("❌").WithCallbackData(fmt.Sprintf("confirm_delete:%s:%s", telegramID, username))
-		rows = append(rows, []telego.InlineKeyboardButton{userBtn, delBtn})
+		rows = append(rows, tu.InlineKeyboardRow(userBtn, delBtn))
 	}
+
+	// Пагинация
+	pagination := []telego.InlineKeyboardButton{}
+	if page > 0 {
+		pagination = append(pagination, tu.InlineKeyboardButton("⬅️ Предыдущая страница").WithCallbackData("page_prev"))
+	}
+	if end < len(users) {
+		pagination = append(pagination, tu.InlineKeyboardButton("➡️ Следующая страница").WithCallbackData("page_next"))
+	}
+	if len(pagination) > 0 {
+		rows = append(rows, pagination)
+	}
+
+	if search != "" {
+		rows = append(rows, tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("🔄 Сбросить поиск").WithCallbackData("reset_search"),
+		))
+	}
+
+	// Назад
 	rows = append(rows, tu.InlineKeyboardRow(
-		tu.InlineKeyboardButton("🔙 Назад").WithCallbackData("admin_users"),
+		tu.InlineKeyboardButton("🔙 В меню").WithCallbackData("go_back"),
 	))
-	keyboard := tu.InlineKeyboard(rows...)
-	return keyboard
+
+	return tu.InlineKeyboard(rows...)
 }
 
 func ConfirmDeleteUser(telegramID, username string) *telego.InlineKeyboardMarkup {
@@ -127,10 +202,10 @@ func OkButton(data string) *telego.InlineKeyboardMarkup {
 	)
 }
 
-func BackButton() *telego.InlineKeyboardMarkup {
+func BackButton(data string) *telego.InlineKeyboardMarkup {
 	return tu.InlineKeyboard(
 		tu.InlineKeyboardRow(
-			tu.InlineKeyboardButton("🔙 Назад").WithCallbackData("go_back"),
+			tu.InlineKeyboardButton("🔙 Назад").WithCallbackData(data),
 		),
 	)
 }

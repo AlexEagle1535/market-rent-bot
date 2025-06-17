@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 // Получение роли по ID Telegram
@@ -89,6 +90,82 @@ func DeleteUser(telegramID int64, username string) error {
 		return err
 	}
 	return nil
+}
+
+func GetUsersByRole(role string) ([]User, error) {
+	rows, err := DB.Query(`SELECT telegram_id, username, role FROM users WHERE role = $1`, role)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var u User
+		err := rows.Scan(&u.TelegramID, &u.Username, &u.Role)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
+}
+
+// func SearchUsers(query string) ([]User, error) {
+// 	searchTerm := "%" + strings.ToLower(query) + "%"
+// 	rows, err := DB.Query(`
+// 		SELECT telegram_id, username, role
+// 		FROM users
+// 		WHERE LOWER(username) LIKE ? OR CAST(telegram_id AS TEXT) LIKE ?
+// 	`, searchTerm, "%"+query+"%")
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	defer rows.Close()
+
+// 	var users []User
+// 	for rows.Next() {
+// 		var u User
+// 		err := rows.Scan(&u.TelegramID, &u.Username, &u.Role)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		users = append(users, u)
+// 	}
+// 	return users, nil
+// }
+
+func SearchUsers(query string, roleFilter string) ([]User, error) {
+	query = "%" + strings.ToLower(query) + "%"
+	sql := `
+		SELECT telegram_id, username, role
+		FROM users
+		WHERE (LOWER(username) LIKE ? OR CAST(telegram_id AS TEXT) LIKE ?)
+	`
+
+	args := []any{query, query}
+
+	if roleFilter != "all" {
+		sql += " AND role = ?"
+		args = append(args, roleFilter)
+	}
+
+	rows, err := DB.Query(sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var u User
+		err := rows.Scan(&u.TelegramID, &u.Username, &u.Role)
+		if err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
 }
 
 type User struct {

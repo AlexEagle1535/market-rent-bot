@@ -41,6 +41,37 @@ func sendMenu(ctx *th.Context, msg telego.Message) error {
 	return nil
 }
 
+func buildUserList(userID int64) (string, *telego.InlineKeyboardMarkup, error) {
+	state := states.GetUserListState(userID)
+
+	var users []db.User
+	var err error
+
+	// Применяем фильтры
+	if state.Search != "" {
+		users, err = db.SearchUsers(state.Search, state.Filter)
+	} else {
+		switch state.Filter {
+		case "admin":
+			users, err = db.GetUsersByRole("admin")
+		case "tenant":
+			users, err = db.GetUsersByRole("tenant")
+		default:
+			users, err = db.GetAllUsers()
+		}
+	}
+	if err != nil {
+		return "", nil, err
+	}
+
+	text := "👥 Список пользователей"
+	if state.Search != "" {
+		text += fmt.Sprintf("\nРезультаты поиска по: %s", state.Search)
+	}
+	markup := menu.AdminUserList(users, state)
+	return text, markup, nil
+}
+
 func Start(ctx *th.Context, msg telego.Message) error {
 	err := sendMenu(ctx, msg)
 	if err != nil {
@@ -61,6 +92,7 @@ func CallbackQuery(ctx *th.Context, query telego.CallbackQuery) error {
 
 	var newText string
 	var newMarkup *telego.InlineKeyboardMarkup
+	var err error
 
 	switch {
 	// === Общее ===
@@ -86,20 +118,20 @@ func CallbackQuery(ctx *th.Context, query telego.CallbackQuery) error {
 
 	case query.Data == "admin_broadcast":
 		newText = "📢 Введите текст рассылки (заглушка)."
-		newMarkup = menu.BackButton()
+		newMarkup = menu.BackButton("go_back")
 
 	case query.Data == "admin_approvals":
 		newText = "✅ Задачи на подтверждение (заглушка)."
-		newMarkup = menu.BackButton()
+		newMarkup = menu.BackButton("go_back")
 
 	// === Существующие ===
 	case query.Data == "import_csv":
 		newText = "📥 Загрузка арендаторов из CSV (заглушка)."
-		newMarkup = menu.BackButton()
+		newMarkup = menu.BackButton("go_back")
 
 	case query.Data == "list_tenants":
 		newText = "📋 Список арендаторов:\n1. ИП Иванов\n2. ООО Рынок\n(заглушка)"
-		newMarkup = menu.BackButton()
+		newMarkup = menu.BackButton("go_back")
 
 	case query.Data == "admin_users":
 		newText = "👤 Пользователи системы"
@@ -112,20 +144,55 @@ func CallbackQuery(ctx *th.Context, query telego.CallbackQuery) error {
 	case query.Data == "add_admin":
 		newText = "Введите username нового администратора:"
 		states.Set(query.From.ID, "awaiting_admin_data")
-		newMarkup = menu.BackButton()
+		newMarkup = menu.BackButton("go_back")
 
 	case query.Data == "add_tenant":
 		newText = "Введите username нового арендатора:"
 		states.Set(query.From.ID, "awaiting_tenant_data")
-		newMarkup = menu.BackButton()
+		newMarkup = menu.BackButton("go_back")
 
 	case query.Data == "list_users":
-		users, err := db.GetAllUsers()
+		states.GetUserListState(query.From.ID).Page = 0
+		newText, newMarkup, err = buildUserList(query.From.ID)
 		if err != nil {
 			return err
 		}
-		newText = "👥 Список пользователей"
-		newMarkup = menu.AdminUserList(users)
+
+	case query.Data == "page_next":
+		states.UpdateUserListState(query.From.ID, func(s *states.UserListState) {
+			s.Page++
+		})
+		newText, newMarkup, err = buildUserList(query.From.ID)
+		if err != nil {
+			return err
+		}
+
+	case query.Data == "page_prev":
+		states.UpdateUserListState(query.From.ID, func(s *states.UserListState) {
+			if s.Page > 0 {
+				s.Page--
+			}
+		})
+		newText, newMarkup, err = buildUserList(query.From.ID)
+		if err != nil {
+			return err
+		}
+
+	case strings.HasPrefix(query.Data, "filter:"):
+		filter := strings.TrimPrefix(query.Data, "filter:")
+		states.UpdateUserListState(query.From.ID, func(s *states.UserListState) {
+			s.Filter = filter
+			s.Page = 0
+		})
+		newText, newMarkup, err = buildUserList(query.From.ID)
+		if err != nil {
+			return err
+		}
+
+	case query.Data == "search_user":
+		states.Set(query.From.ID, "awaiting_search_input")
+		newText = "🔍 Введите username или Telegram ID для поиска:"
+		newMarkup = menu.BackButton("list_users")
 
 	case strings.HasPrefix(query.Data, "confirm_delete:"):
 		data := strings.Split(query.Data, ":")
@@ -137,6 +204,16 @@ func CallbackQuery(ctx *th.Context, query telego.CallbackQuery) error {
 		}
 		newText = fmt.Sprintf("Вы уверены, что хотите удалить пользователя %s?", msgOutput)
 		newMarkup = menu.ConfirmDeleteUser(data[1], data[2])
+
+	case query.Data == "reset_search":
+		states.UpdateUserListState(query.From.ID, func(s *states.UserListState) {
+			s.Search = ""
+			s.Page = 0
+		})
+		newText, newMarkup, err = buildUserList(query.From.ID)
+		if err != nil {
+			return err
+		}
 
 	case strings.HasPrefix(query.Data, "delete_user:"):
 		data := strings.Split(query.Data, ":")
@@ -203,6 +280,23 @@ func TextMessage(ctx *th.Context, msg telego.Message) error {
 			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "✅ Арендатор добавлен!"))
 			states.Set(userID, "main_menu")
 		}
+	}
+	if state == "awaiting_search_input" {
+		search := strings.TrimSpace(msg.Text)
+		states.UpdateUserListState(userID, func(s *states.UserListState) {
+			s.Search = search
+			s.Page = 0
+		})
+		states.Set(userID, "main_menu")
+
+		text, markup, err := buildUserList(userID)
+		if err != nil {
+			fmt.Printf("Ошибка при поиске пользователя: %v\n", err)
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "Ошибка при поиске пользователя."))
+		} else {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), text).WithReplyMarkup(markup))
+		}
+		return nil
 	}
 	sendMenu(ctx, msg)
 	return nil
