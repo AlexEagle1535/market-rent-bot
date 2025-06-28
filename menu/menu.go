@@ -21,12 +21,15 @@ func Admin() *telego.InlineKeyboardMarkup {
 			tu.InlineKeyboardButton("👨‍💼 Арендаторы").WithCallbackData("admin_tenants"),
 		),
 		tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("🧺 Рынок").WithCallbackData("admin_market"),
+		),
+		tu.InlineKeyboardRow(
 			tu.InlineKeyboardButton("👤 Пользователи системы").WithCallbackData("admin_users"),
 		),
 	)
 }
 
-func AdminTetants() *telego.InlineKeyboardMarkup {
+func AdminTenants() *telego.InlineKeyboardMarkup {
 	return tu.InlineKeyboard(
 		tu.InlineKeyboardRow(
 			tu.InlineKeyboardButton("📥 Импорт арендаторов из файла").WithCallbackData("import_csv"),
@@ -38,6 +41,205 @@ func AdminTetants() *telego.InlineKeyboardMarkup {
 			tu.InlineKeyboardButton("🔙 Назад").WithCallbackData("go_back"),
 		),
 	)
+}
+
+func AdminTenantsList(tanants []db.Tenant, state *states.ListState) *telego.InlineKeyboardMarkup {
+	const pageSize = 10
+	page := state.Page
+	start := page * pageSize
+	if start >= len(tanants) {
+		page = 0
+		state.Page = 0
+		start = 0
+	}
+	end := start + pageSize
+	if end > len(tanants) {
+		end = len(tanants)
+	}
+	slice := tanants[start:end]
+
+	rows := make([][]telego.InlineKeyboardButton, 0)
+
+	// Кнопка "Добавить арендатора" и поиск
+	rows = append(rows, tu.InlineKeyboardRow(
+		tu.InlineKeyboardButton("➕ Добавить").WithCallbackData("add_tenant"),
+		tu.InlineKeyboardButton("🔍 Поиск").WithCallbackData("search_tenant"),
+	))
+
+	// Вывод списка арендаторов
+	for _, t := range slice {
+		label := fmt.Sprintf("%s", t.FullName)
+		viewBtn := tu.InlineKeyboardButton(label).WithCallbackData(fmt.Sprintf("view_tenant:%d", t.ID))
+		rows = append(rows, tu.InlineKeyboardRow(viewBtn))
+	}
+
+	// Постраничный вывод
+	pageRow := []telego.InlineKeyboardButton{}
+	if page > 0 {
+		pageRow = append(pageRow, tu.InlineKeyboardButton("⬅️ Предыдущая страница").WithCallbackData("page_prev"))
+	}
+	if end < len(tanants) {
+		pageRow = append(pageRow, tu.InlineKeyboardButton("➡️ Следующая страница").WithCallbackData("page_next"))
+	}
+	if len(pageRow) > 0 {
+		rows = append(rows, pageRow)
+	}
+
+	rows = append(rows, tu.InlineKeyboardRow(
+		tu.InlineKeyboardButton("🔙 В меню").WithCallbackData("go_back"),
+	))
+
+	return tu.InlineKeyboard(rows...)
+}
+
+func AdminMarket() *telego.InlineKeyboardMarkup {
+	return tu.InlineKeyboard(
+		tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("🏪 Павильоны").WithCallbackData("pavilions"),
+		),
+		tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("🧑‍🌾 Виды деятельности").WithCallbackData("activity_types"),
+		),
+		tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("🔙 Назад").WithCallbackData("go_back"),
+		),
+	)
+}
+
+func AdminPavilionList(pavilions []db.Pavilion, state *states.ListState) *telego.InlineKeyboardMarkup {
+	const pageSize = 10
+	page := state.Page
+	start := page * pageSize
+	if start >= len(pavilions) {
+		page = 0
+		state.Page = 0
+		start = 0
+	}
+	end := start + pageSize
+	if end > len(pavilions) {
+		end = len(pavilions)
+	}
+	slice := pavilions[start:end]
+
+	rows := make([][]telego.InlineKeyboardButton, 0)
+
+	// Кнопка "Добавить павильон" и поиск
+	rows = append(rows, tu.InlineKeyboardRow(
+		tu.InlineKeyboardButton("➕ Добавить").WithCallbackData("add_pavilion"),
+		tu.InlineKeyboardButton("🔍 Поиск").WithCallbackData("search_pavilion"),
+	))
+
+	// Вывод списка павильонов
+	for _, p := range slice {
+		label := fmt.Sprintf("№ %s", p.Number)
+		viewBtn := tu.InlineKeyboardButton(label).WithCallbackData(fmt.Sprintf("view_pavilion:%d", p.ID))
+		rows = append(rows, tu.InlineKeyboardRow(viewBtn))
+	}
+
+	// Постраничный вывод
+	pageRow := []telego.InlineKeyboardButton{}
+	if page > 0 {
+		pageRow = append(pageRow, tu.InlineKeyboardButton("⬅️ Предыдущая страница").WithCallbackData("page_prev"))
+	}
+	if end < len(pavilions) {
+		pageRow = append(pageRow, tu.InlineKeyboardButton("➡️ Следующая страница").WithCallbackData("page_next"))
+	}
+	if len(pageRow) > 0 {
+		rows = append(rows, pageRow)
+	}
+
+	rows = append(rows, tu.InlineKeyboardRow(
+		tu.InlineKeyboardButton("🔙 В меню").WithCallbackData("go_back"),
+	))
+
+	return tu.InlineKeyboard(rows...)
+}
+
+func AdminActivityTypesList(types []db.ActivityType, state *states.ListState) *telego.InlineKeyboardMarkup {
+	const pageSize = 10
+	page := state.Page
+	start := page * pageSize
+	if start >= len(types) {
+		page = 0
+		state.Page = 0
+		start = 0
+	}
+	end := start + pageSize
+	if end > len(types) {
+		end = len(types)
+	}
+	slice := types[start:end]
+
+	rows := make([][]telego.InlineKeyboardButton, 0)
+
+	// Кнопка "Добавить вид деятельности" и поиск
+	rows = append(rows, tu.InlineKeyboardRow(
+		tu.InlineKeyboardButton("➕ Добавить").WithCallbackData("add_activity_type"),
+		tu.InlineKeyboardButton("🔍 Поиск").WithCallbackData("search_activity_type"),
+	))
+
+	// Вывод списка видов деятельности
+	for _, t := range slice {
+		label := t.Name
+		viewBtn := tu.InlineKeyboardButton(label).WithCallbackData("noop")
+		rows = append(rows, tu.InlineKeyboardRow(viewBtn))
+	}
+
+	// Постраничный вывод
+	pageRow := []telego.InlineKeyboardButton{}
+	if page > 0 {
+		pageRow = append(pageRow, tu.InlineKeyboardButton("⬅️ Предыдущая страница").WithCallbackData("page_prev"))
+	}
+	if end < len(types) {
+		pageRow = append(pageRow, tu.InlineKeyboardButton("➡️ Следующая страница").WithCallbackData("page_next"))
+	}
+	if len(pageRow) > 0 {
+		rows = append(rows, pageRow)
+	}
+
+	rows = append(rows, tu.InlineKeyboardRow(
+		tu.InlineKeyboardButton("🔙 В меню").WithCallbackData("go_back"),
+	))
+
+	return tu.InlineKeyboard(rows...)
+}
+
+// func AdminActivityTypeSelect(types []db.ActivityType) *telego.InlineKeyboardMarkup {
+// 	rows := make([][]telego.InlineKeyboardButton, 0)
+// 	// Вывод списка видов деятельности
+// 	for _, t := range types {
+// 		label := t.Name
+// 		viewBtn := tu.InlineKeyboardButton(label).WithCallbackData(fmt.Sprintf("select_activity_type:%d", t.ID))
+// 		rows = append(rows, tu.InlineKeyboardRow(viewBtn))
+// 	}
+
+// 	rows = append(rows, tu.InlineKeyboardRow(
+// 		tu.InlineKeyboardButton("➕ Добавить").WithCallbackData("add_activity_type"),
+// 	))
+
+// 	return tu.InlineKeyboard(rows...)
+// }
+
+func AdminActivityTypeSelect(types []db.ActivityType, selected map[int]bool) *telego.InlineKeyboardMarkup {
+	rows := make([][]telego.InlineKeyboardButton, 0)
+
+	for _, t := range types {
+		label := t.Name
+		if selected[t.ID] {
+			label = "✅ " + label
+		}
+		btn := tu.InlineKeyboardButton(label).
+			WithCallbackData(fmt.Sprintf("select_activity_type:%d", t.ID))
+		rows = append(rows, tu.InlineKeyboardRow(btn))
+	}
+
+	// Кнопка завершения выбора
+	rows = append(rows, tu.InlineKeyboardRow(
+		tu.InlineKeyboardButton("➕ Добавить").WithCallbackData("add_activity_type"),
+		tu.InlineKeyboardButton("✅ Завершить").WithCallbackData("finish_activity_selection"),
+	))
+
+	return tu.InlineKeyboard(rows...)
 }
 
 func AdminUsers() *telego.InlineKeyboardMarkup {
@@ -62,45 +264,16 @@ func AddUser() *telego.InlineKeyboardMarkup {
 		tu.InlineKeyboardRow(
 			tu.InlineKeyboardButton("Добавить админа").WithCallbackData("add_admin"),
 		),
-		tu.InlineKeyboardRow(
-			tu.InlineKeyboardButton("Добавить арендатора").WithCallbackData("add_tenant"),
-		),
+		// tu.InlineKeyboardRow(
+		// 	tu.InlineKeyboardButton("Добавить арендатора").WithCallbackData("add_tenant"),
+		// ),
 		tu.InlineKeyboardRow(
 			tu.InlineKeyboardButton("🔙 Назад").WithCallbackData("admin_users"),
 		),
 	)
 }
 
-// func AdminUserList(users []db.User) *telego.InlineKeyboardMarkup {
-
-// 	rows := make([][]telego.InlineKeyboardButton, 0)
-// 	for _, u := range users {
-// 		username := "null"
-// 		if u.Username.Valid {
-// 			username = u.Username.String
-// 		}
-// 		telegramID := "0"
-// 		if u.TelegramID.Valid {
-// 			telegramID = fmt.Sprintf("%d", u.TelegramID.Int64)
-// 		}
-// 		var label string
-// 		if username != "null" {
-// 			label = fmt.Sprintf("%s - %s", username, u.Role)
-// 		} else {
-// 			label = fmt.Sprintf("%s - %s", telegramID, u.Role)
-// 		}
-// 		userBtn := tu.InlineKeyboardButton(label).WithCallbackData("noop")
-// 		delBtn := tu.InlineKeyboardButton("❌").WithCallbackData(fmt.Sprintf("confirm_delete:%s:%s", telegramID, username))
-// 		rows = append(rows, []telego.InlineKeyboardButton{userBtn, delBtn})
-// 	}
-// 	rows = append(rows, tu.InlineKeyboardRow(
-// 		tu.InlineKeyboardButton("🔙 Назад").WithCallbackData("admin_users"),
-// 	))
-// 	keyboard := tu.InlineKeyboard(rows...)
-// 	return keyboard
-// }
-
-func AdminUserList(users []db.User, state *states.UserListState) *telego.InlineKeyboardMarkup {
+func AdminUserList(users []db.User, state *states.ListState) *telego.InlineKeyboardMarkup {
 	const pageSize = 10
 	page := state.Page
 	search := state.Search

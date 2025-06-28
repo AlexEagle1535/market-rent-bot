@@ -111,30 +111,6 @@ func GetUsersByRole(role string) ([]User, error) {
 	return users, nil
 }
 
-// func SearchUsers(query string) ([]User, error) {
-// 	searchTerm := "%" + strings.ToLower(query) + "%"
-// 	rows, err := DB.Query(`
-// 		SELECT telegram_id, username, role
-// 		FROM users
-// 		WHERE LOWER(username) LIKE ? OR CAST(telegram_id AS TEXT) LIKE ?
-// 	`, searchTerm, "%"+query+"%")
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	defer rows.Close()
-
-// 	var users []User
-// 	for rows.Next() {
-// 		var u User
-// 		err := rows.Scan(&u.TelegramID, &u.Username, &u.Role)
-// 		if err != nil {
-// 			return nil, err
-// 		}
-// 		users = append(users, u)
-// 	}
-// 	return users, nil
-// }
-
 func SearchUsers(query string, roleFilter string) ([]User, error) {
 	query = "%" + strings.ToLower(query) + "%"
 	sql := `
@@ -168,8 +144,159 @@ func SearchUsers(query string, roleFilter string) ([]User, error) {
 	return users, nil
 }
 
-type User struct {
-	TelegramID sql.NullInt64
-	Username   sql.NullString
-	Role       string
+// Добавление павильона
+func AddPavilion(number string, area float64) error {
+	_, err := DB.Exec(`INSERT INTO pavilions (pavilion_number, area) VALUES (?, ?)`, number, area)
+	return err
+}
+
+// Получение всех павильонов
+func GetAllPavilions() ([]Pavilion, error) {
+	rows, err := DB.Query(`SELECT id, pavilion_number, area FROM pavilions ORDER BY pavilion_number`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pavilions []Pavilion
+	for rows.Next() {
+		var p Pavilion
+		err := rows.Scan(&p.ID, &p.Number, &p.Area)
+		if err != nil {
+			return nil, err
+		}
+		pavilions = append(pavilions, p)
+	}
+	return pavilions, nil
+}
+
+func GetPavilionByID(id int) (*Pavilion, error) {
+	var p Pavilion
+	err := DB.QueryRow(`SELECT id, pavilion_number, area FROM pavilions WHERE id = ?`, id).Scan(&p.ID, &p.Number, &p.Area)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // Нет такого павильона
+		}
+		return nil, err
+	}
+	return &p, nil
+}
+
+// Добавление вида деятельности
+func AddActivityType(name string) error {
+	_, err := DB.Exec(`INSERT INTO activity_types (name) VALUES (?)`, name)
+	return err
+}
+
+// Получение всех видов деятельности
+func GetAllActivityTypes() ([]ActivityType, error) {
+	rows, err := DB.Query(`SELECT id, name FROM activity_types ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var types []ActivityType
+	for rows.Next() {
+		var a ActivityType
+		err := rows.Scan(&a.ID, &a.Name)
+		if err != nil {
+			return nil, err
+		}
+		types = append(types, a)
+	}
+	return types, nil
+}
+
+func GetAllTenants() ([]Tenant, error) {
+	rows, err := DB.Query("SELECT * FROM tenants")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tenants []Tenant
+	for rows.Next() {
+		var tenant Tenant
+		err := rows.Scan(&tenant.ID, &tenant.UserID, &tenant.FullName, &tenant.RegistrationType, &tenant.HasCashRegister)
+		if err != nil {
+			return nil, err
+		}
+		tenants = append(tenants, tenant)
+	}
+	return tenants, nil
+}
+
+func GetTenantByID(id int) (*Tenant, error) {
+	var tenant Tenant
+	err := DB.QueryRow("SELECT * FROM tenants WHERE id = ?", id).Scan(&tenant.ID, &tenant.FullName, &tenant.RegistrationType, &tenant.HasCashRegister)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // Нет такого арендатора
+		}
+		return nil, err
+	}
+	return &tenant, nil
+}
+
+func AddTenant(username, fullName, registrationType string, hasCashRegister bool) (int64, error) {
+	// Проверка, есть ли пользователь с таким username
+	var userID int64
+	err := DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// Если пользователя нет — создаём
+			res, err := DB.Exec("INSERT INTO users (username, role) VALUES (?, 'tenant')", username)
+			if err != nil {
+				return 0, fmt.Errorf("не удалось создать пользователя: %w", err)
+			}
+			userID, err = res.LastInsertId()
+			if err != nil {
+				return 0, fmt.Errorf("не удалось получить ID нового пользователя: %w", err)
+			}
+		} else {
+			return 0, fmt.Errorf("ошибка при поиске пользователя: %w", err)
+		}
+	}
+	if err == nil {
+		return 0, fmt.Errorf("пользователь с таким username уже существует")
+	}
+	// Добавляем арендатора
+	res, err := DB.Exec(`
+		INSERT INTO tenants (user_id, full_name, registration_type, has_cash_register)
+		VALUES (?, ?, ?, ?)
+	`, userID, fullName, registrationType, hasCashRegister)
+	if err != nil {
+		return 0, fmt.Errorf("не удалось добавить арендатора: %w", err)
+	}
+
+	tenantID, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("не удалось получить ID арендатора: %w", err)
+	}
+
+	return tenantID, nil
+}
+
+func SaveTenantActivityTypes(tenantID int, activityTypeIDs []int) error {
+	tx, err := DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare("INSERT OR IGNORE INTO tenant_activity_types (tenant_id, activity_type_id) VALUES (?, ?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, id := range activityTypeIDs {
+		_, err := stmt.Exec(tenantID, id)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }

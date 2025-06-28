@@ -48,49 +48,64 @@ func Clear(userID int64) {
 	delete(userData, userID)
 }
 
-// --- Состояние листа пользователей (UserListState) ---
-
-type UserListState struct {
+type ListState struct {
 	Page   int
-	Filter string // all, admin, tenant
+	Filter string
 	Search string
+	Scope  string // users, pavilions, etc.
 }
 
 var (
-	userListStates = make(map[int64]*UserListState)
-	userListMutex  sync.RWMutex
+	listStates   = make(map[int64]*ListState)
+	listStateMux sync.RWMutex
 )
 
-func GetUserListState(userID int64) *UserListState {
-	userListMutex.RLock()
-	state, ok := userListStates[userID]
-	userListMutex.RUnlock()
+func GetListState(userID int64) *ListState {
+	listStateMux.RLock()
+	state, ok := listStates[userID]
+	listStateMux.RUnlock()
 
 	if ok {
 		return state
 	}
 
-	userListMutex.Lock()
-	defer userListMutex.Unlock()
-	state = &UserListState{
+	listStateMux.Lock()
+	defer listStateMux.Unlock()
+	state = &ListState{
 		Page:   0,
 		Filter: "all",
 		Search: "",
+		Scope:  "users",
 	}
-	userListStates[userID] = state
+	listStates[userID] = state
 	return state
 }
 
-func UpdateUserListState(userID int64, update func(state *UserListState)) {
-	userListMutex.Lock()
-	defer userListMutex.Unlock()
-	if state, ok := userListStates[userID]; ok {
+func UpdateListState(userID int64, update func(state *ListState)) {
+	listStateMux.Lock()
+	defer listStateMux.Unlock()
+	if state, ok := listStates[userID]; ok {
 		update(state)
 	}
 }
 
-func ClearUserListState(userID int64) {
-	userListMutex.Lock()
-	defer userListMutex.Unlock()
-	delete(userListStates, userID)
+var tempStorage = make(map[int64]map[string]string)
+
+func SetTemp(userID int64, key, value string) {
+	if _, ok := tempStorage[userID]; !ok {
+		tempStorage[userID] = make(map[string]string)
+	}
+	tempStorage[userID][key] = value
+}
+
+func GetTemp(userID int64, key string) (string, bool) {
+	if userData, ok := tempStorage[userID]; ok {
+		val, ok := userData[key]
+		return val, ok
+	}
+	return "", false
+}
+
+func ClearTemp(userID int64) {
+	delete(tempStorage, userID)
 }
