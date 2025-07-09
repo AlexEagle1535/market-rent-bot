@@ -104,3 +104,36 @@ func toggleActivitySelection(userID int64, selectedID int) []int {
 	}
 	return result
 }
+
+func sendActivitySelection(ctx *th.Context, msg telego.Message) error {
+	// Получаем список активностей
+	activities, err := db.GetAllActivityTypes()
+	if err != nil {
+		log.Printf("Ошибка получения списка активностей: %v", err)
+		return err
+	}
+
+	// Формируем текст сообщения
+	text := "Выберите активности для арендатора:"
+	if len(activities) == 0 {
+		text = "Нет доступных активностей."
+	}
+	selectedMap := make(map[int]bool)
+
+	// Формируем клавиатуру
+	markup := menu.AdminActivityTypeSelect(activities, selectedMap)
+
+	// Отправляем сообщение
+	_, err = ctx.Bot().SendMessage(ctx, tu.Message(
+		tu.ID(msg.Chat.ID),
+		text,
+	).WithReplyMarkup(markup))
+	return err
+}
+
+func boolToEmoji(b bool) string {
+	if b {
+		return "✅"
+	}
+	return "❌"
+}

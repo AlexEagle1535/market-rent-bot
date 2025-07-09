@@ -204,22 +204,6 @@ func AdminActivityTypesList(types []db.ActivityType, state *states.ListState) *t
 	return tu.InlineKeyboard(rows...)
 }
 
-// func AdminActivityTypeSelect(types []db.ActivityType) *telego.InlineKeyboardMarkup {
-// 	rows := make([][]telego.InlineKeyboardButton, 0)
-// 	// Вывод списка видов деятельности
-// 	for _, t := range types {
-// 		label := t.Name
-// 		viewBtn := tu.InlineKeyboardButton(label).WithCallbackData(fmt.Sprintf("select_activity_type:%d", t.ID))
-// 		rows = append(rows, tu.InlineKeyboardRow(viewBtn))
-// 	}
-
-// 	rows = append(rows, tu.InlineKeyboardRow(
-// 		tu.InlineKeyboardButton("➕ Добавить").WithCallbackData("add_activity_type"),
-// 	))
-
-// 	return tu.InlineKeyboard(rows...)
-// }
-
 func AdminActivityTypeSelect(types []db.ActivityType, selected map[int]bool) *telego.InlineKeyboardMarkup {
 	rows := make([][]telego.InlineKeyboardButton, 0)
 
@@ -237,6 +221,24 @@ func AdminActivityTypeSelect(types []db.ActivityType, selected map[int]bool) *te
 	rows = append(rows, tu.InlineKeyboardRow(
 		tu.InlineKeyboardButton("➕ Добавить").WithCallbackData("add_activity_type"),
 		tu.InlineKeyboardButton("✅ Завершить").WithCallbackData("finish_activity_selection"),
+	))
+
+	return tu.InlineKeyboard(rows...)
+}
+
+func AdminPavilionSelect(pavilions []db.Pavilion) *telego.InlineKeyboardMarkup {
+	rows := make([][]telego.InlineKeyboardButton, 0)
+
+	for _, p := range pavilions {
+		label := fmt.Sprintf("№ %s", p.Number)
+		btn := tu.InlineKeyboardButton(label).
+			WithCallbackData(fmt.Sprintf("select_pavilion:%d", p.ID))
+		rows = append(rows, tu.InlineKeyboardRow(btn))
+	}
+
+	// Кнопка завершения выбора
+	rows = append(rows, tu.InlineKeyboardRow(
+		tu.InlineKeyboardButton("➕ Добавить").WithCallbackData("add_pavilion"),
 	))
 
 	return tu.InlineKeyboard(rows...)
@@ -341,7 +343,7 @@ func AdminUserList(users []db.User, state *states.ListState) *telego.InlineKeybo
 
 	// Назад
 	rows = append(rows, tu.InlineKeyboardRow(
-		tu.InlineKeyboardButton("🔙 В меню").WithCallbackData("go_back"),
+		tu.InlineKeyboardButton("🔙 В меню").WithCallbackData("admin_users"),
 	))
 
 	return tu.InlineKeyboard(rows...)

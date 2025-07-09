@@ -59,11 +59,11 @@ func InitDB() {
 			tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
 			pavilion_id INTEGER NOT NULL REFERENCES pavilions(id) ON DELETE CASCADE,
 			contract_number TEXT NOT NULL,
-			settlement_day DATE NOT NULL,
+			settlement_day DATE,
 			start_date DATE NOT NULL,
 			end_date DATE NOT NULL,
 			rent_amount DECIMAL NOT NULL,
-			amount_per_m2 DECIMAL NOT NULL
+			amount_per_m2 DECIMAL 
 		);`,
 
 		// Таблица кассовых аппаратов

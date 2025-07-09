@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // Получение роли по ID Telegram
@@ -75,6 +76,18 @@ func GetAllUsers() ([]User, error) {
 		users = append(users, u)
 	}
 	return users, nil
+}
+
+func GetUsernameByID(userID int) (string, error) {
+	var username string
+	err := DB.QueryRow("SELECT username FROM users WHERE id = ?", userID).Scan(&username)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil // Нет такого пользователя
+		}
+		return "", err
+	}
+	return username, nil
 }
 
 func DeleteUser(telegramID int64, username string) error {
@@ -182,6 +195,18 @@ func GetPavilionByID(id int) (*Pavilion, error) {
 	return &p, nil
 }
 
+func GetPavilionByNumber(num string) (*Pavilion, error) {
+	var p Pavilion
+	err := DB.QueryRow(`SELECT id, pavilion_number, area FROM pavilions WHERE pavilion_number = ?`, num).Scan(&p.ID, &p.Number, &p.Area)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // Нет такого павильона
+		}
+		return nil, err
+	}
+	return &p, nil
+}
+
 // Добавление вида деятельности
 func AddActivityType(name string) error {
 	_, err := DB.Exec(`INSERT INTO activity_types (name) VALUES (?)`, name)
@@ -229,7 +254,7 @@ func GetAllTenants() ([]Tenant, error) {
 
 func GetTenantByID(id int) (*Tenant, error) {
 	var tenant Tenant
-	err := DB.QueryRow("SELECT * FROM tenants WHERE id = ?", id).Scan(&tenant.ID, &tenant.FullName, &tenant.RegistrationType, &tenant.HasCashRegister)
+	err := DB.QueryRow("SELECT * FROM tenants WHERE id = ?", id).Scan(&tenant.ID, &tenant.UserID, &tenant.FullName, &tenant.RegistrationType, &tenant.HasCashRegister)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // Нет такого арендатора
@@ -299,4 +324,55 @@ func SaveTenantActivityTypes(tenantID int, activityTypeIDs []int) error {
 	}
 
 	return tx.Commit()
+}
+
+func AddTenantContract(tenantID int, contractNumber, pavilionNumber string, dateStartTime, dateEndTime time.Time, amount float64) error {
+	// Получаем ID павильона по номеру
+	var pavilionID int
+	err := DB.QueryRow("SELECT id FROM pavilions WHERE pavilion_number = ?", pavilionNumber).Scan(&pavilionID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("павильон с номером %s не найден", pavilionNumber)
+		}
+		return fmt.Errorf("ошибка при получении ID павильона: %w", err)
+	}
+
+	// Добавляем договор аренды
+	_, err = DB.Exec(`
+		INSERT INTO contracts (tenant_id, pavilion_id, contract_number, start_date, end_date, rent_amount)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, tenantID, pavilionID, contractNumber, dateStartTime, dateEndTime, amount)
+	return err
+}
+
+func GetTenantActivityTypes(tenantID int) ([]ActivityType, error) {
+	rows, err := DB.Query(`
+		SELECT at.id, at.name
+		FROM tenant_activity_types tat
+		JOIN activity_types at ON tat.activity_type_id = at.id
+		WHERE tat.tenant_id = ?
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var types []ActivityType
+	for rows.Next() {
+		var a ActivityType
+		err := rows.Scan(&a.ID, &a.Name)
+		if err != nil {
+			return nil, err
+		}
+		types = append(types, a)
+	}
+	return types, nil
+}
+
+func AddCashRegister(tenantID int, model, cashRegisterNumber string) error {
+	_, err := DB.Exec(`
+		INSERT INTO cash_registers (tenant_id, model, reg_number)
+		VALUES (?, ?, ?)
+	`, tenantID, model, cashRegisterNumber)
+	return err
 }

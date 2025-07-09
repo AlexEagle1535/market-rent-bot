@@ -5,6 +5,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/AlexEagle1535/market-rent-bot/db"
 	"github.com/AlexEagle1535/market-rent-bot/menu"
@@ -72,10 +73,6 @@ func CallbackQuery(ctx *th.Context, query telego.CallbackQuery) error {
 		newText = "📥 Загрузка арендаторов из CSV (заглушка)."
 		newMarkup = menu.BackButton("go_back")
 
-	// case query.Data == "list_tenants":
-	// 	newText = "📋 Список арендаторов:\n1. ИП Иванов\n2. ООО Рынок\n(заглушка)"
-	// 	newMarkup = menu.BackButton("go_back")
-
 	case query.Data == "admin_users":
 		newText = "👤 Пользователи системы"
 		newMarkup = menu.AdminUsers()
@@ -141,6 +138,54 @@ func CallbackQuery(ctx *th.Context, query telego.CallbackQuery) error {
 	case query.Data == "add_tenant":
 		newText = "Введите username нового арендатора:"
 		states.Set(query.From.ID, "awaiting_tenant_data")
+		_, ok := states.GetTemp(query.From.ID, "activity_selection_process")
+		if ok {
+			newMarkup = nil
+		} else {
+			newMarkup = menu.BackButton("list_tenants")
+		}
+
+	case strings.HasPrefix(query.Data, "view_tenant:"):
+		idStr := strings.TrimPrefix(query.Data, "view_tenant:")
+		tenantID, err := strconv.Atoi(idStr)
+		if err != nil {
+			log.Printf("Ошибка преобразования ID арендатора %s: %v", idStr, err)
+			return nil
+		}
+		tenant, err := db.GetTenantByID(tenantID)
+		if err != nil {
+			log.Printf("Ошибка получения арендатора с ID %d: %v", tenantID, err)
+			return nil
+		}
+		username, err := db.GetUsernameByID(tenant.UserID)
+		if err != nil {
+			log.Printf("Ошибка получения username арендатора с ID %d: %v", tenantID, err)
+			return nil
+		}
+		cashReg := boolToEmoji(tenant.HasCashRegister)
+		tenantInfo := fmt.Sprintf(`
+		Информация об арендаторе:
+
+		ФИО: %s
+		Username: %s
+		Регистрация: %s
+		Наличие кассового аппарата: %s
+
+		`, tenant.FullName, username, tenant.RegistrationType, cashReg)
+		activities, err := db.GetTenantActivityTypes(tenantID)
+		if err != nil {
+			log.Printf("Ошибка получения видов деятельности арендатора с ID %d: %v", tenantID, err)
+			return nil
+		}
+		if len(activities) > 0 {
+			tenantInfo += "Виды деятельности:\n"
+			for _, activity := range activities {
+				tenantInfo += fmt.Sprintf("- %s\n", activity.Name)
+			}
+		} else {
+			tenantInfo += "Виды деятельности: не указаны.\n"
+		}
+		newText = tenantInfo
 		newMarkup = menu.BackButton("list_tenants")
 
 	case strings.HasPrefix(query.Data, "select_activity_type:"):
@@ -191,8 +236,13 @@ func CallbackQuery(ctx *th.Context, query telego.CallbackQuery) error {
 			newMarkup = menu.OkButton("list_tenants")
 		}
 
-		states.ClearTemp(query.From.ID)
-		states.Set(query.From.ID, "main_menu")
+		// states.ClearTemp(query.From.ID)
+		// states.Set(query.From.ID, "main_menu")
+
+	case query.Data == "add_tenant_contract":
+		states.Set(query.From.ID, "awaiting_tenant_contract_data")
+		newText = "Введите номер договора аренды:"
+		newMarkup = nil
 
 	case query.Data == "page_next":
 		states.UpdateListState(query.From.ID, func(s *states.ListState) {
@@ -364,15 +414,18 @@ func CallbackQuery(ctx *th.Context, query telego.CallbackQuery) error {
 		_ = ctx.Bot().AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID))
 		return nil
 	}
-	// Редактируем сообщение
-	_, _ = ctx.Bot().EditMessageText(ctx, &telego.EditMessageTextParams{
+
+	params := telego.EditMessageTextParams{
 		ChatID:    telego.ChatID{ID: message.Chat.ID},
 		MessageID: message.MessageID,
 		Text:      newText,
-		ReplyMarkup: &telego.InlineKeyboardMarkup{
-			InlineKeyboard: newMarkup.InlineKeyboard,
-		},
-	})
+	}
+
+	if newMarkup != nil {
+		params.ReplyMarkup = newMarkup
+	}
+	// Редактируем сообщение
+	_, _ = ctx.Bot().EditMessageText(ctx, &params)
 
 	// Ответ на callback (чтобы убрать "часики" у пользователя)
 	_ = ctx.Bot().AnswerCallbackQuery(ctx, tu.CallbackQuery(query.ID))
@@ -383,6 +436,7 @@ func CallbackQuery(ctx *th.Context, query telego.CallbackQuery) error {
 func TextMessage(ctx *th.Context, msg telego.Message) error {
 	userID := msg.From.ID
 	state := states.Get(userID)
+	//var err error
 	//////////////////////// Добавление администратора //////////////////////////////
 	if state == "awaiting_admin_data" {
 		username := msg.Text
@@ -439,6 +493,7 @@ func TextMessage(ctx *th.Context, msg telego.Message) error {
 			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Ответ должен быть 'да' или 'нет'."))
 			return nil
 		}
+
 		// Получаем данные из временного хранилища
 		username, ok := states.GetTemp(userID, "tenant_username")
 		if !ok {
@@ -462,13 +517,11 @@ func TextMessage(ctx *th.Context, msg telego.Message) error {
 			return nil
 		}
 		var hasCashRegisterBool bool
-
 		if hasCashRegister == "да" {
 			hasCashRegisterBool = true
 		} else {
 			hasCashRegisterBool = false
 		}
-
 		// Сохраняем арендатора в БД
 		tenantId, err := db.AddTenant(username, fio, registrationType, hasCashRegisterBool)
 		if err != nil {
@@ -478,34 +531,94 @@ func TextMessage(ctx *th.Context, msg telego.Message) error {
 			states.Set(userID, "main_menu")
 			sendMenu(ctx, msg)
 			return nil
-		} else {
-			states.SetTemp(userID, "tenant_id", strconv.Itoa(int(tenantId)))
-			states.Set(userID, "awaiting_tenant_extended_data")
-			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "✅ Арендатор успешно добавлен! Хотите добавить дополнительные данные? (да/нет)"))
 		}
+
+		states.SetTemp(userID, "tenant_id", strconv.Itoa(int(tenantId)))
+		if hasCashRegisterBool {
+			states.Set(userID, "awaiting_cash_register_data")
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "Введите модель кассового аппарата:"))
+			return nil
+		}
+		states.Set(userID, "awaiting_activity_type_select")
+		err = sendActivitySelection(ctx, msg)
+		if err != nil {
+			log.Printf("Ошибка получения видов деятельности: %v", err)
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Ошибка получения видов деятельности."))
+			states.Set(userID, "main_menu")
+			states.ClearTemp(userID)
+			sendMenu(ctx, msg)
+		}
+		states.SetTemp(userID, "activity_selection_process", "")
 		return nil
 	}
 
-	if state == "awaiting_tenant_extended_data" {
-		answer := strings.ToLower(strings.TrimSpace(msg.Text))
-		if answer != "да" && answer != "нет" {
-			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Ответ должен быть 'да' или 'нет'."))
+	if state == "awaiting_cash_register_data" {
+		cashRegisterModel := strings.TrimSpace(msg.Text)
+		if cashRegisterModel == "" {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Модель кассового аппарата не может быть пустой."))
 			return nil
 		}
-		if answer == "да" {
-			states.Set(userID, "awaiting_activity_type_select")
-		} else {
-			// Завершаем процесс добавления арендатора
-			states.ClearTemp(userID)
-			states.Set(userID, "main_menu")
-			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "Арендатор успешно добавлен!"))
-			sendMenu(ctx, msg)
-		}
+		states.SetTemp(userID, "cash_register_model", cashRegisterModel)
+		states.Set(userID, "awaiting_cash_reg_number")
+		_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "Введите регистрационный номер кассового аппарата:"))
 		return nil
+	}
+	if state == "awaiting_cash_reg_number" {
+		cashRegNumber := strings.TrimSpace(msg.Text)
+		if cashRegNumber == "" {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Регистрационный номер кассового аппарата не может быть пустым."))
+			return nil
+		}
+		// Получаем данные из временного хранилища
+		cashRegisterModel, ok := states.GetTemp(userID, "cash_register_model")
+		if !ok {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Не удалось найти модель кассового аппарата. Попробуйте заново."))
+			states.Set(userID, "main_menu")
+			sendMenu(ctx, msg)
+			return nil
+		}
+		tenantIDStr, ok := states.GetTemp(userID, "tenant_id")
+		if !ok {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Не удалось найти ID арендатора. Попробуйте заново."))
+			states.Set(userID, "main_menu")
+			sendMenu(ctx, msg)
+			return nil
+		}
+		tenantID, err := strconv.Atoi(tenantIDStr)
+		if err != nil {
+			log.Printf("Ошибка преобразования ID арендатора %s: %v", tenantIDStr, err)
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Ошибка при преобразовании ID арендатора."))
+			states.Set(userID, "main_menu")
+			sendMenu(ctx, msg)
+			return nil
+		}
+		err = db.AddCashRegister(tenantID, cashRegisterModel, cashRegNumber)
+		if err != nil {
+			log.Printf("Ошибка при добавлении кассового аппарата: %v", err)
+			states.Set(userID, "main_menu")
+			sendMenu(ctx, msg)
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Ошибка при добавлении кассового аппарата."))
+			return nil
+		} else {
+			states.Set(userID, "awaiting_activity_type_select")
+			err = sendActivitySelection(ctx, msg)
+			if err != nil {
+				log.Printf("Ошибка получения видов деятельности: %v", err)
+				_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Ошибка получения видов деятельности."))
+				states.Set(userID, "main_menu")
+				states.ClearTemp(userID)
+				sendMenu(ctx, msg)
+				return nil
+			}
+			states.SetTemp(userID, "activity_selection_process", "")
+			return nil
+		}
 	}
 
 	if state == "awaiting_activity_type_select" {
-		ActivityTypes, err := db.GetAllActivityTypes()
+		// ActivityTypes, err := db.GetAllActivityTypes()
+		// if err != nil {
+		err := sendActivitySelection(ctx, msg)
 		if err != nil {
 			log.Printf("Ошибка получения видов деятельности: %v", err)
 			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Ошибка получения видов деятельности."))
@@ -514,10 +627,189 @@ func TextMessage(ctx *th.Context, msg telego.Message) error {
 			sendMenu(ctx, msg)
 			return nil
 		}
-		selectedMap := make(map[int]bool)
 		states.SetTemp(userID, "activity_selection_process", "")
-		_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "Выберите тип деятельности арендатора из существующих, или добавьте новый (можно несколько вариантов)").WithReplyMarkup(menu.AdminActivityTypeSelect(ActivityTypes, selectedMap)))
+		return nil
+		// }
+		// selectedMap := make(map[int]bool)
+
+		// 	_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "Выберите тип деятельности арендатора из существующих, или добавьте новый (можно несколько вариантов)").WithReplyMarkup(menu.AdminActivityTypeSelect(ActivityTypes, selectedMap)))
 	}
+
+	if state == "awaiting_tenant_contract_data" {
+		contractNumber := strings.TrimSpace(msg.Text)
+		if contractNumber == "" {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Номер договора аренды не может быть пустым."))
+			return nil
+		}
+		states.SetTemp(userID, "tenant_contract_number", contractNumber)
+		states.Set(userID, "awaiting_tenant_pavilion")
+		_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "Введите номер арендуемого павильона"))
+		return nil
+	}
+
+	if state == "awaiting_tenant_pavilion" {
+		pavilionNumber := strings.TrimSpace(msg.Text)
+		if pavilionNumber == "" {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Номер павилиона не может быть пустым."))
+			return nil
+		}
+		pav, err := db.GetPavilionByNumber(pavilionNumber)
+		if err != nil {
+			log.Printf("Ошибка поиска номера павильона: %v", err)
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Ошибка поиска номера павильона"))
+			return nil
+		}
+		if pav == nil {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "Павильон с данным номером не найден, хотите его добавить? (да/нет)"))
+			states.Set(userID, "awaiting_pavilion_add_confirm")
+			states.SetTemp(userID, "tenant_pavilion_number_on_add", pavilionNumber)
+			return nil
+		} else {
+			states.SetTemp(userID, "tenant_pavilion_number", pavilionNumber)
+			states.Set(userID, "awaiting_tenant_contract_dates")
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "Введите сроки аренды павильона по договору (например, 01.01.2023 - 31.12.2023):"))
+		}
+	}
+	if state == "awaiting_pavilion_add_confirm" {
+		answer := strings.ToLower(strings.TrimSpace(msg.Text))
+		if answer != "да" && answer != "нет" {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Ответ должен быть 'да' или 'нет'."))
+			return nil
+		}
+		if answer == "да" {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "Введите площадь павильона в м² (пример 15.5):"))
+			states.Set(userID, "adding_pavilion_area")
+			pavilionNumber, ok := states.GetTemp(userID, "tenant_pavilion_number_on_add")
+			if !ok {
+				_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Не удалось найти номер павильона. Попробуйте заново."))
+				states.Set(userID, "main_menu")
+				sendMenu(ctx, msg)
+				return nil
+			}
+			states.SetTemp(userID, "pavilion_number", pavilionNumber)
+			states.SetTemp(userID, "tenant_pavilion_number", pavilionNumber)
+			return nil
+		} else {
+			// Если нет, то возвращаемся к вводу номера павильона
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "Введите номер арендуемого павильона:"))
+			states.Set(userID, "awaiting_tenant_pavilion")
+			return nil
+		}
+	}
+
+	if state == "awaiting_tenant_contract_dates" {
+		contractDates := strings.TrimSpace(msg.Text)
+		if contractDates == "" {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Сроки аренды не могут быть пустыми."))
+			return nil
+		}
+		dates := strings.Split(contractDates, " - ")
+		if len(dates) != 2 {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Сроки аренды должны быть в формате 'дата начала - дата окончания' (например, 01.01.2023 - 31.12.2023)."))
+			return nil
+		}
+		startDate, err := time.Parse("02.01.2006", strings.TrimSpace(dates[0]))
+		if err != nil {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Дата начала аренды указана некорректно, повторите ввод."))
+			return nil
+		}
+		endDate, err := time.Parse("02.01.2006", strings.TrimSpace(dates[1]))
+		if err != nil {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Дата окончания аренды указана некорректно, повторите ввод."))
+			return nil
+		}
+		states.SetTemp(userID, "tenant_contract_dateStart", startDate.Format("2006-01-02"))
+		states.SetTemp(userID, "tenant_contract_dateEnd", endDate.Format("2006-01-02"))
+		states.Set(userID, "awaiting_tenant_rent_amount")
+		_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "Введите сумму аренды в месяц:"))
+		return nil
+	}
+
+	if state == "awaiting_tenant_rent_amount" {
+		rentAmount := strings.TrimSpace(msg.Text)
+		if rentAmount == "" {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Сумма аренды не может быть пустой."))
+			return nil
+		}
+		amount, err := strconv.ParseFloat(rentAmount, 64) // Проверка на корректность числа
+		if err != nil {
+			log.Printf("Ошибка преобразования суммы аренды: %v", err)
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Сумма аренды указана некорректно, повторите ввод."))
+			return nil
+		}
+		// Получаем данные из временного хранилища
+		tenantIDStr, ok := states.GetTemp(userID, "tenant_id")
+		if !ok {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Не удалось найти ID арендатора. Попробуйте заново."))
+			states.Set(userID, "main_menu")
+			sendMenu(ctx, msg)
+			return nil
+		}
+		tenantID, err := strconv.Atoi(tenantIDStr)
+		if err != nil {
+			log.Printf("Ошибка преобразования ID арендатора %s: %v", tenantIDStr, err)
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Ошибка при преобразовании ID арендатора."))
+			states.Set(userID, "main_menu")
+			sendMenu(ctx, msg)
+			return nil
+		}
+		contractNumber, ok := states.GetTemp(userID, "tenant_contract_number")
+		if !ok {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Не удалось найти номер договора аренды. Попробуйте заново."))
+			states.Set(userID, "main_menu")
+			sendMenu(ctx, msg)
+			return nil
+		}
+		pavilionNumber, ok := states.GetTemp(userID, "tenant_pavilion_number")
+		if !ok {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Не удалось найти номер павильона. Попробуйте заново."))
+			states.Set(userID, "main_menu")
+			sendMenu(ctx, msg)
+			return nil
+		}
+		dateStart, ok := states.GetTemp(userID, "tenant_contract_dateStart")
+		if !ok {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Не удалось найти дату начала аренды. Попробуйте заново."))
+			states.Set(userID, "main_menu")
+			sendMenu(ctx, msg)
+			return nil
+		}
+
+		dateEnd, ok := states.GetTemp(userID, "tenant_contract_dateEnd")
+		if !ok {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Не удалось найти дату окончания аренды. Попробуйте заново."))
+			states.Set(userID, "main_menu")
+			sendMenu(ctx, msg)
+			return nil
+		}
+
+		dateStartTime, err := time.Parse("2006-01-02", dateStart)
+		if err != nil {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Дата начала аренды указана некорректно, повторите ввод."))
+			return nil
+		}
+		dateEndTime, err := time.Parse("2006-01-02", dateEnd)
+		if err != nil {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Дата окончания аренды указана некорректно, повторите ввод."))
+			return nil
+		}
+		// Сохраняем договор аренды в БД
+		err = db.AddTenantContract(tenantID, contractNumber, pavilionNumber, dateStartTime, dateEndTime, amount)
+		if err != nil {
+			log.Printf("Ошибка при добавлении договора аренды: %v", err)
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Ошибка при добавлении договора аренды."))
+			states.Set(userID, "main_menu")
+			sendMenu(ctx, msg)
+			return nil
+		} else {
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "✅ Договор аренды успешно добавлен!"))
+			states.ClearTemp(userID)
+			states.Set(userID, "main_menu")
+			sendMenu(ctx, msg)
+			return nil
+		}
+	}
+
 	///////////////////////////////////////// Добавление павильона //////////////////////////////
 	if state == "adding_pavilion_number" {
 		number := strings.TrimSpace(msg.Text)
@@ -552,7 +844,11 @@ func TextMessage(ctx *th.Context, msg telego.Message) error {
 		} else {
 			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "✅ Павильон успешно добавлен!"))
 		}
-
+		if _, ok := states.GetTemp(userID, "tenant_pavilion_number"); ok {
+			states.Set(userID, "awaiting_tenant_contract_dates")
+			_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "Введите сроки аренды павильона по договору (например, 01.01.2023 - 31.12.2023):"))
+			return nil
+		}
 		states.ClearTemp(userID)
 		states.Set(userID, "main_menu")
 		sendMenu(ctx, msg)
@@ -574,8 +870,15 @@ func TextMessage(ctx *th.Context, msg telego.Message) error {
 		}
 		_, ok := states.GetTemp(userID, "activity_selection_process")
 		if ok {
-			states.Set(userID, "awaiting_activity_type_select")
-			return nil
+			err = sendActivitySelection(ctx, msg)
+			if err != nil {
+				log.Printf("Ошибка получения видов деятельности: %v", err)
+				_, _ = ctx.Bot().SendMessage(ctx, tu.Message(tu.ID(msg.Chat.ID), "❌ Ошибка получения видов деятельности."))
+				states.Set(userID, "main_menu")
+				states.ClearTemp(userID)
+				sendMenu(ctx, msg)
+				return nil
+			}
 		} else {
 			states.Set(userID, "main_menu")
 			sendMenu(ctx, msg)
