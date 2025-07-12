@@ -90,7 +90,7 @@ func GetUsernameByID(userID int) (string, error) {
 	return username, nil
 }
 
-func DeleteUser(telegramID int64, username string) error {
+func DeleteUserByUsername(telegramID int64, username string) error {
 	if telegramID == 0 && username == "" {
 		return fmt.Errorf("не указан telegramID и username")
 	}
@@ -101,6 +101,14 @@ func DeleteUser(telegramID int64, username string) error {
 	if username != "" {
 		_, err := DB.Exec("DELETE FROM users WHERE username = ?", username)
 		return err
+	}
+	return nil
+}
+
+func DeleteUserByID(userID int) error {
+	_, err := DB.Exec("DELETE FROM users WHERE id = ?", userID)
+	if err != nil {
+		return fmt.Errorf("не удалось удалить пользователя: %w", err)
 	}
 	return nil
 }
@@ -303,6 +311,14 @@ func AddTenant(username, fullName, registrationType string, hasCashRegister bool
 	return tenantID, nil
 }
 
+func DeleteTenant(tenantID int) error {
+	_, err := DB.Exec("DELETE FROM tenants WHERE id = ?", tenantID)
+	if err != nil {
+		return fmt.Errorf("не удалось удалить арендатора: %w", err)
+	}
+	return nil
+}
+
 func SaveTenantActivityTypes(tenantID int, activityTypeIDs []int) error {
 	tx, err := DB.Begin()
 	if err != nil {
@@ -326,7 +342,7 @@ func SaveTenantActivityTypes(tenantID int, activityTypeIDs []int) error {
 	return tx.Commit()
 }
 
-func AddTenantContract(tenantID int, contractNumber, pavilionNumber string, dateStartTime, dateEndTime time.Time, amount float64) error {
+func AddTenantContract(tenantID int, contractNumber, pavilionNumber string, signingDate, dateStartTime, dateEndTime time.Time, amount float64) error {
 	// Получаем ID павильона по номеру
 	var pavilionID int
 	err := DB.QueryRow("SELECT id FROM pavilions WHERE pavilion_number = ?", pavilionNumber).Scan(&pavilionID)
@@ -339,9 +355,9 @@ func AddTenantContract(tenantID int, contractNumber, pavilionNumber string, date
 
 	// Добавляем договор аренды
 	_, err = DB.Exec(`
-		INSERT INTO contracts (tenant_id, pavilion_id, contract_number, start_date, end_date, rent_amount)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, tenantID, pavilionID, contractNumber, dateStartTime, dateEndTime, amount)
+		INSERT INTO contracts (tenant_id, pavilion_id, contract_number, signing_date, start_date, end_date, rent_amount)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, tenantID, pavilionID, contractNumber, signingDate, dateStartTime, dateEndTime, amount)
 	return err
 }
 
@@ -375,4 +391,30 @@ func AddCashRegister(tenantID int, model, cashRegisterNumber string) error {
 		VALUES (?, ?, ?)
 	`, tenantID, model, cashRegisterNumber)
 	return err
+}
+
+func GetTenantContracts(tenantID int) ([]Contract, error) {
+	rows, err := DB.Query(`
+		SELECT c.id, c.contract_number, p.pavilion_number, c.signing_date ,c.start_date, c.end_date, c.rent_amount
+		FROM contracts c
+		JOIN pavilions p ON c.pavilion_id = p.id
+		WHERE c.tenant_id = ?
+	`, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var contracts []Contract
+	for rows.Next() {
+		var contract Contract
+
+		err := rows.Scan(&contract.ID, &contract.ContractNumber, &contract.PavilionNumber, &contract.SigningDate, &contract.StartDate, &contract.EndDate, &contract.RentAmount)
+		if err != nil {
+			return nil, err
+		}
+
+		contracts = append(contracts, contract)
+	}
+	return contracts, nil
 }

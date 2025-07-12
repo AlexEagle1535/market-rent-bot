@@ -1,6 +1,9 @@
 package db
 
-import "database/sql"
+import (
+	"database/sql"
+	"time"
+)
 
 type Pavilion struct {
 	ID     int
@@ -25,4 +28,14 @@ type Tenant struct {
 	FullName         string
 	RegistrationType string
 	HasCashRegister  bool
+}
+
+type Contract struct {
+	ID             int
+	PavilionNumber string
+	ContractNumber string
+	SigningDate    time.Time
+	StartDate      time.Time
+	EndDate        time.Time
+	RentAmount     float64
 }

@@ -33,7 +33,7 @@ func InitDB() {
 		// Таблица арендаторов
 		`CREATE TABLE IF NOT EXISTS tenants (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+			user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE,
 			full_name TEXT NOT NULL,
 			registration_type TEXT NOT NULL,
 			has_cash_register BOOLEAN NOT NULL DEFAULT 0
@@ -59,7 +59,7 @@ func InitDB() {
 			tenant_id INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
 			pavilion_id INTEGER NOT NULL REFERENCES pavilions(id) ON DELETE CASCADE,
 			contract_number TEXT NOT NULL,
-			settlement_day DATE,
+			signing_date DATE NOT NULL,
 			start_date DATE NOT NULL,
 			end_date DATE NOT NULL,
 			rent_amount DECIMAL NOT NULL,

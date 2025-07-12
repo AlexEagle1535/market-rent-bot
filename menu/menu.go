@@ -106,6 +106,44 @@ func AdminMarket() *telego.InlineKeyboardMarkup {
 	)
 }
 
+func ViewTenant(tenantID int) *telego.InlineKeyboardMarkup {
+	return tu.InlineKeyboard(
+		tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("📝 Редактировать").WithCallbackData(fmt.Sprintf("edit_tenant:%d", tenantID)),
+			tu.InlineKeyboardButton("❌ Удалить").WithCallbackData(fmt.Sprintf("confirm_delete_tenant:%d", tenantID)),
+		),
+		tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("🔙 Назад").WithCallbackData("list_tenants"),
+		),
+	)
+}
+
+func EditTenant(tenantID int) *telego.InlineKeyboardMarkup {
+	return tu.InlineKeyboard(
+		tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("📝 Изменить данные арендатора").WithCallbackData(fmt.Sprintf("edit_tenant_data:%d", tenantID)),
+		),
+		tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("🧑‍🌾 Изменить виды деятельности").WithCallbackData(fmt.Sprintf("_contract:%d", tenantID)),
+		),
+		tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("📃 Изменить договор аренды").WithCallbackData(fmt.Sprintf("edit_contract:%d", tenantID)),
+		),
+		tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("🔙 Назад").WithCallbackData(fmt.Sprintf("view_tenant:%d", tenantID)),
+		),
+	)
+}
+
+func ConfirmDeleteTenant(tenantID int) *telego.InlineKeyboardMarkup {
+	return tu.InlineKeyboard(
+		tu.InlineKeyboardRow(
+			tu.InlineKeyboardButton("✅ Подтвердить").WithCallbackData(fmt.Sprintf("delete_tenant:%d", tenantID)),
+			tu.InlineKeyboardButton("❌ Отмена").WithCallbackData("view_tenant:"+fmt.Sprintf("%d", tenantID)),
+		),
+	)
+}
+
 func AdminPavilionList(pavilions []db.Pavilion, state *states.ListState) *telego.InlineKeyboardMarkup {
 	const pageSize = 10
 	page := state.Page
